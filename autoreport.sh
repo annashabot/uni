@@ -87,7 +87,7 @@ for (( i=0; i<$sample_count; i++)); do
 			then
 				m=$(( $i+1 ))
 				sortarray[$m]=$j
-			fi
+		fi
 	done
 done
 
