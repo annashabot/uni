@@ -1,5 +1,4 @@
 #!/bin/bash
-
 ############# READS STATISTICS SHEET #############
 #find mapping.txt
 mapping_path=$(find -name "mapping.txt")
