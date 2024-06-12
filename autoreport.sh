@@ -1,141 +1,36 @@
 #!/bin/bash
-############# READS STATISTICS SHEET #############
-#find mapping.txt
-mapping_path=$(find -name "mapping.txt")
+metadata_path=$(find -name "sample-metadata-bac1.tsv")
+read_stat_path="trunk_10_30_240_220/stats-dada2-bac1/metadata.tsv"
+chao1="trunk_10_30_240_220/alpha-metrics/chao1"
+faith_pd="trunk_10_30_240_220/alpha-metrics/faith_pd"
+observed_features="trunk_10_30_240_220/alpha-metrics/observed_features"
+shannon="trunk_10_30_240_220/alpha-metrics/shannon"
+simpson="trunk_10_30_240_220/alpha-metrics/simpson"
 
-#extract ids into arrray $sample_ids
-sample_ids=($(tail --lines=+2 $mapping_path | grep -o -P "^.*?(?=\t)"))
+qiime tools export --input-path $chao1.qza --output-path $chao1
+qiime tools export --input-path $faith_pd.qza --output-path $faith_pd
+qiime tools export --input-path $observed_features.qza --output-path $observed_features
+qiime tools export --input-path $shannon.qza --output-path $shannon
+qiime tools export --input-path $simpson.qza --output-path $simpson
 
-#count number of samples
-sample_count=${#sample_ids[@]}
-count=$(( $sample_count +1 ))
+head -1 $read_stat_path >> read_stat.xlsx
+sed '1,2d' $read_stat_path | sort -n >> read_stat.xlsx
 
-#find raw reads file: split_library_log.txt
-raw_reads_file=$(find -name "split_library_log.txt")
+file='alpha-diversity.tsv'
+paste $chao1/$file $faith_pd/$file $observed_features/$file $shannon/$file $simpson/$file | cut -f 1,2,4,6,8,10 | sort -n > alpha_diversity.xlsx
 
-#raw reads to array $rreadsinsample
-for ((i=0; i<$sample_count; i++));
+declare -a arr=("phyla" "class" "order" "family" "genus" "species")
+b=2
+
+for j in "${arr[@]}"
 do
-	rreadsinsample[i]+=$(grep -o -P "(?<=^${sample_ids[i]}\t).*" $raw_reads_file)
+awk ' BEGIN {FS="\t"} 
+{ for (i=1; i<=NF; i++)  { a[NR,i] = $i } } NF>p { p = NF } END { for(j=1; j<=p; j++) { str=a[1,j]
+    	for(i=2; i<=NR; i++){ str=str"\t"a[i,j]; } print str }
+}' trunk_10_30_240_220/silva138/bac1/rel-tables/L$b-$j.tsv | cut --complement -f1 | awk 'NR == 1; NR > 1 {print $0 | "sort -n"}' | awk ' BEGIN {FS="\t"}
+{ for (i=1; i<=NF; i++)  { a[NR,i] = $i } } NF>p { p = NF } END { for(j=1; j<=p; j++) { str=a[1,j]
+    	for(i=2; i<=NR; i++){ str=str"\t"a[i,j]; } print str } }' > $j.xlsx
+let "b++"
 done
-
-#find non-chimeric reads folder: demultiplexed
-non_chimeric_path=$(find -name "demultiplexed")
-
-#non-chimeric reads to array $nonchimeric
-for ((i=0; i<$sample_count; i++));
-do
-	nonchimeric[i]+=$(grep -c '^>' $non_chimeric_path/${sample_ids[i]}.fna)
-done
-
-#calculate chimeric reads, to array
-for ((i=0; i<$sample_count; i++));
-do
-	chimeric[i]=$(( ${rreadsinsample[i]}-${nonchimeric[i]} ))
-done
-
-#find rarefied reads folder: rarefied
-rarefied_path=$(find -name "rarefied")
-
-#rarefied reads -> array $rar_reads
-for ((i=0; i<$sample_count; i++));
-do
-	rar_reads[i]+=$(grep -c '^>' $rarefied_path/${sample_ids[i]}.fna)
-done
-
-#find reads with OTU file: reads_with_otu_per_sample.txt
-otureads_path=$(find -name "reads_with_otu_per_sample.txt")
-
-#reads with otu per sample -> array $otureads
-for ((i=0; i<$sample_count; i++));
-do
-	otureads[i]+=$(grep -o -P "(?<=^ ${sample_ids[i]}: )\d*" $otureads_path)
-done
-
-#find OTU per sample file: otu_per_sample.txt
-otusample_path=$(find -name "otu_per_sample.txt")
-
-#OTU per sample -> array $otusample
-for ((i=0; i<$sample_count; i++));
-do
-	otusample[i]+=$(grep -o -P "(?<=^ ${sample_ids[i]}: )\d*" $otusample_path)
-done
-
-#write to csv file
-echo ,,,,rarefied > reads_statistics.xlsx
-echo Sample,Raw reads,N of chimeras,Non-chimeric reads,Rarefied reads,Reads with OTU,OTU per sample >> reads_statistics.xlsx
-for ((i=0; i<$sample_count; i++));
-do
-	echo ${sample_ids[i]},${rreadsinsample[i]},${chimeric[i]},${nonchimeric[i]},${rar_reads[i]},${otureads[i]},${otusample[i]} >> reads_statistics.xlsx
-done
-
-############# TAXONOMY SHEET #############
-#find L7 taxonomy file
-L7_path=$(find -name "otu_table_mc2_w_tax_no_pynast_failures_L7.txt" | head -1)
-
-#open L7 taxonomy file and read second row as string
-header=$(head -2 $L7_path | tail -1)
-
-#divide header into array by tab delimeter
-IFS="	" read -a headarray <<< "$header"
-
-#sort 1 to last elements of array in ascending order, make an array of position numbers
-for (( i=0; i<$sample_count; i++)); do
-	for ((j=1; j<count; j++)); do
-		if [[ ${headarray[j]} == ${sample_ids[i]} ]]; 
-			then
-				m=$(( $i+1 ))
-				sortarray[$m]=$j
-		fi
-	done
-done
-
-#writing header into taxonomy.csv file
-for (( i=0; i<count; i++ ));
-do
-	echo -n ${headarray[${sortarray[i]}]} >> taxonomy.xlsx
- 	if (( i==$sample_count )); then
- 		echo "" >> taxonomy.xlsx
- 	else
- 		echo -n "," >> taxonomy.xlsx
- 	fi 
-done
-
-#read file from 2 to last row line by line
-taxa=()
-while IFS= read -r line || [[ "$line" ]]; do
-  taxa+=("$line")
-done < $L7_path
-
-#read taxa by element, split each on tabs, write to taxonomy.csv in right order
-for ((j=2; j<${#taxa[@]}; j++)); 
-do
-	IFS="	" read -a taxaarray <<< "${taxa[j]}"
-	for ((i=0; i<count; i++));
-	do
-		echo -n ${taxaarray[${sortarray[i]}]} >> taxonomy.xlsx
- 		if ((i==$sample_count)); then
- 			echo "" >> taxonomy.xlsx
- 		else
- 			echo -n "," >> taxonomy.xlsx
- 		fi 
-	done
-done
-
-############# ALPHA DIVERSITY SHEET #############
-indices=$(find -name "indices.txt")
-echo -n "Sample_ID" >> tmp
-sed 's/\t/,/g' $indices >> tmp
-
-lines=()
-while IFS= read -r line || [[ "$line" ]]; do
-  lines+=("$line")
-done < tmp
-
-echo ${lines[0]} >> alpha_diversity.xlsx
-
-for ((i=1; i<count; i++));
-do
-	echo ${lines[${sortarray[i]}]} >> alpha_diversity.xlsx
-done
-rm tmp
+python3 merge.py
+rm alpha_diversity.xlsx read_stat.xlsx phyla.xlsx class.xlsx order.xlsx family.xlsx genus.xlsx species.xlsx
